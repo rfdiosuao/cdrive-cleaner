@@ -20,8 +20,9 @@ pub async fn scan_start(
     };
 
     let engine_clone = state.scan_engine.clone();
+    let ai_service = state.ai_service.clone();
     tokio::spawn(async move {
-        if let Err(e) = engine_clone.start_scan(scan_mode).await {
+        if let Err(e) = engine_clone.start_scan(scan_mode, Some(ai_service)).await {
             tracing::error!("扫描失败: {}", e);
         }
     });

@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -7,8 +8,12 @@ use crate::error::AppError;
 use crate::models::scan::{
     FileMetadata, RiskLevel, ScanCategory, ScanMode, ScanPhase, ScanProgress, ScanResult, ScanTarget,
 };
+use crate::services::ai_service::{AIFileAnalysis, AIService};
 use crate::services::file_walker::{FileWalker, WalkConfig};
 use crate::services::usn_scanner::UsnScanner;
+
+const AI_SAMPLE_PER_RESULT: usize = 25;
+const AI_MAX_SAMPLE_FILES: usize = 160;
 
 #[derive(Clone)]
 pub struct ScanEngine {
@@ -32,7 +37,11 @@ impl ScanEngine {
         }
     }
 
-    pub async fn start_scan(&self, mode: ScanMode) -> Result<(), AppError> {
+    pub async fn start_scan(
+        &self,
+        mode: ScanMode,
+        ai_service: Option<Arc<AIService>>,
+    ) -> Result<(), AppError> {
         let mut scanning = self.is_scanning.write().await;
         if *scanning {
             return Err(AppError::ScanError("扫描正在进行中".to_string()));
@@ -68,6 +77,14 @@ impl ScanEngine {
             *scanning = false;
 
             return Err(e);
+        }
+
+        if !*self.cancel_token.read().await {
+            if let Some(ai_service) = ai_service {
+                if let Err(e) = self.apply_ai_analysis(&ai_service).await {
+                    tracing::warn!("AI识别失败，保留规则扫描结果: {}", e);
+                }
+            }
         }
 
         let mut progress = self.progress.write().await;
@@ -298,8 +315,8 @@ impl ScanEngine {
         self.evaluate_safety_scores().await?;
 
         let mut progress = self.progress.write().await;
-        progress.phase = ScanPhase::Completed;
-        progress.percent = 100.0;
+        progress.phase = ScanPhase::Evaluating;
+        progress.percent = 95.0;
         progress.elapsed_time_ms = start.elapsed().as_millis() as u64;
         drop(progress);
 
@@ -426,6 +443,7 @@ impl ScanEngine {
                 "Cache" => ScanCategory::Cache,
                 "Log" => ScanCategory::Log,
                 "Download" => ScanCategory::Download,
+                "Recycle" => ScanCategory::Recycle,
                 "Browser" => ScanCategory::Browser,
                 "System" => ScanCategory::System,
                 "App" => ScanCategory::App,
@@ -557,6 +575,236 @@ impl ScanEngine {
         } else {
             90.0
         }
+    }
+
+    pub async fn apply_ai_analysis(&self, ai_service: &AIService) -> Result<(), AppError> {
+        let config = ai_service.get_config().await;
+        if !config.provider.is_cloud()
+            || config.api_key.trim().is_empty()
+            || config.model.trim().is_empty()
+        {
+            return Ok(());
+        }
+
+        let snapshot = self.results.read().await.clone();
+        if snapshot.is_empty() {
+            return Ok(());
+        }
+
+        let samples = Self::select_ai_samples(&snapshot);
+        if samples.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut progress = self.progress.write().await;
+            progress.phase = ScanPhase::Evaluating;
+            progress.current_path = "AI识别扫描结果".to_string();
+            progress.percent = progress.percent.max(96.0);
+        }
+
+        let analyses = ai_service.analyze_files(&samples).await?;
+        if analyses.is_empty() {
+            return Ok(());
+        }
+
+        let analysis_by_path: HashMap<String, AIFileAnalysis> = analyses
+            .into_iter()
+            .map(|analysis| (Self::path_key(&analysis.path), analysis))
+            .collect();
+
+        let mut results = self.results.write().await;
+        for result in results.iter_mut() {
+            let mut matched = Vec::new();
+            for file in result.files.iter_mut() {
+                if let Some(analysis) = analysis_by_path.get(&Self::path_key(&file.path)) {
+                    file.category = analysis.category.clone();
+                    matched.push(analysis.clone());
+                }
+            }
+
+            if matched.is_empty() {
+                continue;
+            }
+
+            let category = Self::majority_category(&matched)
+                .unwrap_or_else(|| result.target.category.clone());
+            let average_score = matched
+                .iter()
+                .map(|analysis| analysis.safety_score)
+                .sum::<f64>()
+                / matched.len() as f64;
+            let worst_risk = matched
+                .iter()
+                .map(|analysis| analysis.risk_level.clone())
+                .max_by_key(Self::risk_weight)
+                .unwrap_or_else(|| Self::risk_from_score(average_score));
+            let unsafe_count = matched
+                .iter()
+                .filter(|analysis| !analysis.safe_to_clean)
+                .count();
+
+            result.target.category = category.clone();
+            result.target.name = Self::category_name(&category).to_string();
+            result.safety_score = Self::cap_score_for_risk(average_score, &worst_risk);
+            result.risk_level = worst_risk.clone();
+            result.recommendation =
+                Self::build_ai_recommendation(&matched, unsafe_count, &worst_risk);
+            result.target.description = format!(
+                "{}: {} 个文件, {:.2} MB，AI抽样识别 {} 个",
+                Self::category_name(&category),
+                result.file_count,
+                result.total_size as f64 / (1024.0 * 1024.0),
+                matched.len()
+            );
+        }
+
+        Ok(())
+    }
+
+    fn select_ai_samples(results: &[ScanResult]) -> Vec<FileMetadata> {
+        let mut samples = Vec::new();
+        let mut seen_paths = HashSet::new();
+
+        for result in results {
+            let mut files = result.files.clone();
+            files.sort_by(|a, b| b.size.cmp(&a.size));
+
+            for file in files.into_iter().take(AI_SAMPLE_PER_RESULT) {
+                if samples.len() >= AI_MAX_SAMPLE_FILES {
+                    return samples;
+                }
+
+                let path_key = Self::path_key(&file.path);
+                if seen_paths.insert(path_key) {
+                    samples.push(file);
+                }
+            }
+        }
+
+        samples
+    }
+
+    fn majority_category(analyses: &[AIFileAnalysis]) -> Option<ScanCategory> {
+        let mut counts: HashMap<String, (ScanCategory, usize)> = HashMap::new();
+        for analysis in analyses {
+            let entry = counts
+                .entry(format!("{:?}", analysis.category))
+                .or_insert_with(|| (analysis.category.clone(), 0));
+            entry.1 += 1;
+        }
+
+        counts
+            .into_values()
+            .max_by_key(|(_, count)| *count)
+            .map(|(category, _)| category)
+    }
+
+    fn risk_weight(risk_level: &RiskLevel) -> u8 {
+        match risk_level {
+            RiskLevel::Safe => 0,
+            RiskLevel::Low => 1,
+            RiskLevel::Medium => 2,
+            RiskLevel::High => 3,
+            RiskLevel::Critical => 4,
+        }
+    }
+
+    fn cap_score_for_risk(score: f64, risk_level: &RiskLevel) -> f64 {
+        let cap = match risk_level {
+            RiskLevel::Safe => 100.0,
+            RiskLevel::Low => 79.0,
+            RiskLevel::Medium => 59.0,
+            RiskLevel::High => 39.0,
+            RiskLevel::Critical => 19.0,
+        };
+
+        score.min(cap).clamp(0.0, 100.0)
+    }
+
+    fn risk_from_score(score: f64) -> RiskLevel {
+        if score >= 80.0 {
+            RiskLevel::Safe
+        } else if score >= 60.0 {
+            RiskLevel::Low
+        } else if score >= 40.0 {
+            RiskLevel::Medium
+        } else if score >= 20.0 {
+            RiskLevel::High
+        } else {
+            RiskLevel::Critical
+        }
+    }
+
+    fn build_ai_recommendation(
+        analyses: &[AIFileAnalysis],
+        unsafe_count: usize,
+        worst_risk: &RiskLevel,
+    ) -> String {
+        let mut reasons = Vec::new();
+        let mut seen = HashSet::new();
+
+        for analysis in analyses {
+            let reason = analysis.reason.trim();
+            if !reason.is_empty() && seen.insert(reason.to_string()) {
+                reasons.push(reason.to_string());
+            }
+
+            if reasons.len() >= 2 {
+                break;
+            }
+        }
+
+        let reason_text = if reasons.is_empty() {
+            "未提供详细原因".to_string()
+        } else {
+            reasons.join("；")
+        };
+
+        if unsafe_count == 0 {
+            format!(
+                "AI识别：{}，抽样 {} 个文件均可清理。{}",
+                Self::risk_label(worst_risk),
+                analyses.len(),
+                reason_text
+            )
+        } else {
+            format!(
+                "AI识别：{}，抽样 {} 个文件中 {} 个不建议清理。{}",
+                Self::risk_label(worst_risk),
+                analyses.len(),
+                unsafe_count,
+                reason_text
+            )
+        }
+    }
+
+    fn risk_label(risk_level: &RiskLevel) -> &'static str {
+        match risk_level {
+            RiskLevel::Safe => "安全",
+            RiskLevel::Low => "低风险",
+            RiskLevel::Medium => "中等风险",
+            RiskLevel::High => "高风险",
+            RiskLevel::Critical => "极高风险",
+        }
+    }
+
+    fn category_name(category: &ScanCategory) -> &'static str {
+        match category {
+            ScanCategory::Temp => "临时文件",
+            ScanCategory::Cache => "缓存文件",
+            ScanCategory::Log => "日志文件",
+            ScanCategory::Download => "下载文件",
+            ScanCategory::Recycle => "回收站",
+            ScanCategory::Browser => "浏览器缓存",
+            ScanCategory::System => "系统文件",
+            ScanCategory::App => "应用数据",
+            ScanCategory::Other => "其他文件",
+        }
+    }
+
+    fn path_key(path: &str) -> String {
+        path.replace('/', "\\").to_lowercase()
     }
 
     pub async fn stop_scan(&self) -> Result<(), AppError> {

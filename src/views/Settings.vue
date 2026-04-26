@@ -37,7 +37,7 @@ const isSaving = ref(false);
 
 const cloudProviders = [
   { id: "openai", name: "OpenAI", defaultUrl: "https://api.openai.com/v1" },
-  { id: "anthropic", name: "Anthropic", defaultUrl: "https://api.anthropic.com" },
+  { id: "anthropic", name: "Anthropic", defaultUrl: "https://api.anthropic.com/v1" },
   { id: "deepseek", name: "DeepSeek", defaultUrl: "https://api.deepseek.com/v1" },
   { id: "qwen", name: "通义千问", defaultUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
   { id: "custom", name: "自定义", defaultUrl: "" },
