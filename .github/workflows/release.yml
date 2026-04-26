@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'C盘清理助手 v__VERSION__'
+          releaseBody: |
+            ## C盘清理助手 v__VERSION__
+
+            ### 下载
+            - **.exe** - 免安装版本
+            - **.msi** - 安装包版本
+
+            ### 安装说明
+            1. 下载对应文件
+            2. 运行安装程序或直接运行exe
+            3. 如遇到SmartScreen提示，选择"仍要运行"
+          releaseDraft: true
+          prerelease: false
