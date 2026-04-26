@@ -2,12 +2,16 @@
 import { ref, computed } from "vue";
 import { ScanSearch, CheckCircle2, Circle, Trash2 } from "lucide-vue-next";
 import { scanStart, scanProgress, scanResult } from "../api/scan";
+import { cleanExecute, cleanPreview } from "../api/clean";
 import { useScanStore } from "../stores/scan";
-import type { ScanResult } from "../types/scan";
+import type { CleanPriority, CleanTask } from "../types/clean";
+import type { FileMetadata, ScanResult } from "../types/scan";
 
 const scanStore = useScanStore();
 const selectedIds = ref<Set<string>>(new Set());
 const isScanning = ref(false);
+const isCleaning = ref(false);
+const cleanStatus = ref<string | null>(null);
 const filterCategory = ref<string>("all");
 
 function formatBytes(bytes: number): string {
@@ -47,6 +51,7 @@ function selectAll() {
 
 async function startScan() {
   isScanning.value = true;
+  cleanStatus.value = null;
   scanStore.setScanning(true);
   scanStore.clearResults();
 
@@ -91,6 +96,78 @@ const categoryNames: Record<string, string> = {
   app: "应用数据",
   other: "其他",
 };
+
+function priorityForRisk(riskLevel: ScanResult["riskLevel"]): CleanPriority {
+  if (riskLevel === "critical") return "critical";
+  if (riskLevel === "high") return "high";
+  if (riskLevel === "medium") return "normal";
+  return "low";
+}
+
+function buildCleanTasks(result: ScanResult): CleanTask[] {
+  const files = result.files.length > 0
+    ? result.files
+    : [{
+        path: result.target.path,
+        name: result.target.name,
+        size: result.totalSize,
+        isDirectory: false,
+      } as FileMetadata];
+
+  return files.map((file, index) => ({
+    id: `${result.id}-${index}`,
+    targetId: result.id,
+    targetPath: file.path,
+    targetName: file.name || result.target.name,
+    action: "delete",
+    priority: priorityForRisk(result.riskLevel),
+    riskLevel: result.riskLevel,
+    size: file.size,
+    fileCount: 1,
+    backupRequired: true,
+  }));
+}
+
+async function cleanSelected() {
+  const selectedResults = scanStore.results.filter((r) => selectedIds.value.has(r.id));
+  if (selectedResults.length === 0 || isCleaning.value) return;
+
+  const tasks = selectedResults.flatMap(buildCleanTasks);
+  if (tasks.length === 0) return;
+
+  isCleaning.value = true;
+  cleanStatus.value = null;
+
+  try {
+    const preview = await cleanPreview(tasks);
+    if (preview.warnings.length > 0) {
+      const confirmed = window.confirm(`发现 ${preview.warnings.length} 个风险提示，是否继续清理？`);
+      if (!confirmed) {
+        cleanStatus.value = "已取消清理";
+        return;
+      }
+    }
+
+    const results = await cleanExecute(tasks);
+    const failed = results.filter((r) => !r.success).length;
+    const cleaned = results.reduce((sum, r) => sum + r.cleanedFiles, 0);
+    const freed = results.reduce((sum, r) => sum + r.freedSpace, 0);
+
+    if (failed === 0) {
+      const selected = new Set(selectedIds.value);
+      scanStore.setResults(scanStore.results.filter((r) => !selected.has(r.id)));
+      selectedIds.value.clear();
+    }
+
+    cleanStatus.value = failed === 0
+      ? `已清理 ${cleaned} 个文件，释放 ${formatBytes(freed)}`
+      : `清理完成，${failed} 个任务失败，已清理 ${cleaned} 个文件`;
+  } catch (e: any) {
+    cleanStatus.value = e?.message || "清理失败";
+  } finally {
+    isCleaning.value = false;
+  }
+}
 </script>
 
 <template>
@@ -143,6 +220,10 @@ const categoryNames: Record<string, string> = {
     </div>
 
     <div v-if="scanStore.results.length > 0" class="space-y-2">
+      <div v-if="cleanStatus" class="card text-sm text-dark-300">
+        {{ cleanStatus }}
+      </div>
+
       <div
         v-for="result in filteredResults"
         :key="result.id"
@@ -183,9 +264,9 @@ const categoryNames: Record<string, string> = {
     <div v-if="selectedIds.size > 0" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-dark-800 border border-dark-600 rounded-xl px-6 py-3 flex items-center gap-4 shadow-xl">
       <span class="text-sm text-dark-400">已选择 <span class="text-accent-blue font-bold">{{ selectedIds.size }}</span> 项</span>
       <span class="text-sm text-dark-400">共 <span class="text-accent-red font-bold">{{ formatBytes(totalSelectedSize) }}</span></span>
-      <button class="btn-primary flex items-center gap-2">
-        <Trash2 :size="16" />
-        清理选中项
+      <button class="btn-primary flex items-center gap-2" @click="cleanSelected" :disabled="isCleaning">
+        <Trash2 :size="16" :class="{ 'animate-pulse': isCleaning }" />
+        {{ isCleaning ? '清理中...' : '清理选中项' }}
       </button>
     </div>
   </div>

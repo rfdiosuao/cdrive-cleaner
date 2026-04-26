@@ -55,6 +55,10 @@ impl CleanEngine {
     }
 
     pub async fn execute(&self, tasks: Vec<CleanTask>) -> Result<Vec<CleanResult>, AppError> {
+        if tasks.is_empty() {
+            return Err(AppError::CleanError("清理任务列表不能为空".to_string()));
+        }
+
         let mut cleaning = self.is_cleaning.write().await;
         if *cleaning {
             return Err(AppError::CleanError("清理任务正在进行中".to_string()));
@@ -94,8 +98,9 @@ impl CleanEngine {
             });
             drop(progress);
 
+            let task_backup_dir = restore_backup_dir.join(&task.id);
             if task.backup_required {
-                if let Err(e) = self.backup_file(&task.target_path, &restore_backup_dir).await {
+                if let Err(e) = self.backup_file(&task.target_path, &task_backup_dir).await {
                     tracing::warn!("备份失败: {} - {}", task.target_path, e);
                 }
             }
@@ -114,7 +119,12 @@ impl CleanEngine {
 
             let result = self.clean_single_task(task).await;
             match result {
-                Ok(clean_result) => results.push(clean_result),
+                Ok(mut clean_result) => {
+                    if task.backup_required {
+                        clean_result.backup_path = task_backup_dir.to_str().unwrap_or("").to_string();
+                    }
+                    results.push(clean_result)
+                }
                 Err(e) => {
                     results.push(CleanResult {
                         task_id: task.id.clone(),
@@ -122,7 +132,11 @@ impl CleanEngine {
                         freed_space: 0,
                         cleaned_files: 0,
                         failed_files: task.file_count,
-                        backup_path: restore_backup_dir.to_str().unwrap_or("").to_string(),
+                        backup_path: if task.backup_required {
+                            task_backup_dir.to_str().unwrap_or("").to_string()
+                        } else {
+                            String::new()
+                        },
                         elapsed_time_ms: start.elapsed().as_millis() as u64,
                         errors: vec![CleanError {
                             file_path: task.target_path.clone(),
@@ -372,11 +386,15 @@ impl CleanEngine {
     }
 
     pub async fn restore(&self, restore_id: &str) -> Result<(), AppError> {
-        let restore_points = self.restore_points.read().await;
-        let restore_point = restore_points
-            .iter()
-            .find(|rp| rp.id == restore_id)
-            .ok_or_else(|| AppError::CleanError(format!("还原点不存在: {}", restore_id)))?;
+        let restore_tasks = {
+            let restore_points = self.restore_points.read().await;
+            restore_points
+                .iter()
+                .find(|rp| rp.id == restore_id)
+                .ok_or_else(|| AppError::CleanError(format!("还原点不存在: {}", restore_id)))?
+                .tasks
+                .clone()
+        };
 
         let backup_dir = self.backup_dir.read().await.clone();
         let restore_backup_dir = backup_dir.join(restore_id);
@@ -385,8 +403,19 @@ impl CleanEngine {
             return Err(AppError::CleanError("备份目录不存在".to_string()));
         }
 
-        for task in &restore_point.tasks {
-            let _ = self.restore_single_file(&restore_backup_dir, &task.target_path).await;
+        let mut errors = Vec::new();
+        for task in &restore_tasks {
+            let task_backup_dir = restore_backup_dir.join(&task.id);
+            if let Err(e) = self.restore_single_file(&task_backup_dir, &task.target_path).await {
+                errors.push(format!("{}: {}", task.target_path, e));
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(AppError::CleanError(format!(
+                "部分文件恢复失败: {}",
+                errors.join("; ")
+            )));
         }
 
         Ok(())

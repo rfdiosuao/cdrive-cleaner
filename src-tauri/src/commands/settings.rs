@@ -32,6 +32,7 @@ pub async fn ai_config_set(
     config: AIConfig,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
+    state.config_store.save_ai_config(&config).await?;
     state.ai_service.set_config(config).await;
     Ok(())
 }

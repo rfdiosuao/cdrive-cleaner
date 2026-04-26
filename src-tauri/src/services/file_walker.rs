@@ -143,7 +143,7 @@ impl FileWalker {
             .to_string()
             .to_lowercase();
 
-        let category = Self::categorize_by_extension(&extension);
+        let category = Self::categorize_path(path, &extension);
 
         let modified = metadata.modified().ok();
         let created = metadata.created().ok();
@@ -179,7 +179,28 @@ impl FileWalker {
         }
     }
 
-    fn categorize_by_extension(ext: &str) -> ScanCategory {
+    fn categorize_path(path: &Path, ext: &str) -> ScanCategory {
+        let path_text = path.to_string_lossy().replace('/', "\\").to_lowercase();
+
+        if path_text.contains(r"\$recycle.bin\") || path_text.ends_with(r"\$recycle.bin") {
+            return ScanCategory::Recycle;
+        }
+        if path_text.contains(r"\inetcache\")
+            || path_text.contains(r"\google\chrome\")
+            || path_text.contains(r"\microsoft\edge\")
+            || path_text.contains(r"\mozilla\firefox\")
+        {
+            return ScanCategory::Browser;
+        }
+        if path_text.contains(r"\softwaredistribution\download\")
+            || path_text.contains(r"\prefetch\")
+        {
+            return ScanCategory::Cache;
+        }
+        if path_text.contains(r"\temp\") || path_text.ends_with(r"\temp") {
+            return ScanCategory::Temp;
+        }
+
         match ext {
             "tmp" | "temp" | "bak" => ScanCategory::Temp,
             "log" | "old" => ScanCategory::Log,

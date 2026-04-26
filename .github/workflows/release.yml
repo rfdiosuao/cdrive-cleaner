@@ -36,10 +36,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'C盘清理助手 v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'C盘清理助手 ${{ github.ref_name }}'
           releaseBody: |
-            ## C盘清理助手 v__VERSION__
+            ## C盘清理助手 ${{ github.ref_name }}
 
             ### 下载
             - **.exe** - 免安装版本

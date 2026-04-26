@@ -53,15 +53,30 @@ impl ScanEngine {
         progress.elapsed_time_ms = 0;
         drop(progress);
 
-        match &mode {
-            ScanMode::Quick => self.quick_scan().await?,
-            ScanMode::Deep => self.deep_scan().await?,
-            ScanMode::Custom(paths) => self.custom_scan(paths).await?,
+        let result = match &mode {
+            ScanMode::Quick => self.quick_scan().await,
+            ScanMode::Deep => self.deep_scan().await,
+            ScanMode::Custom(paths) => self.custom_scan(paths).await,
+        };
+
+        if let Err(e) = result {
+            let mut progress = self.progress.write().await;
+            progress.phase = ScanPhase::Error;
+            drop(progress);
+
+            let mut scanning = self.is_scanning.write().await;
+            *scanning = false;
+
+            return Err(e);
         }
 
         let mut progress = self.progress.write().await;
-        progress.phase = ScanPhase::Completed;
-        progress.percent = 100.0;
+        if *self.cancel_token.read().await {
+            progress.phase = ScanPhase::Cancelled;
+        } else {
+            progress.phase = ScanPhase::Completed;
+            progress.percent = 100.0;
+        }
         drop(progress);
 
         let mut scanning = self.is_scanning.write().await;
@@ -158,7 +173,7 @@ impl ScanEngine {
 
         let (tx, mut rx) = mpsc::channel::<Vec<FileMetadata>>(256);
         let _cancel = self.cancel_token.clone();
-        let excluded = WalkConfig::default().excluded_dirs;
+        let excluded = Vec::new();
 
         let walker = FileWalker::new(cpu_count * 4, 100);
         let cancel_clone = self.cancel_token.clone();

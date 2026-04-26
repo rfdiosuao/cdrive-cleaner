@@ -62,15 +62,7 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: 'C盘清理助手 v__VERSION__'
-          releaseBody: 'See the assets to download this version.'
-          releaseDraft: true
-          prerelease: false
+        run: npm run tauri build
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4

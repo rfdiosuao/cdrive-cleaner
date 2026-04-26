@@ -1,21 +1,49 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CloudModelProvider {
+    #[serde(rename = "openai")]
     OpenAI,
     Anthropic,
+    #[serde(rename = "deepseek")]
     DeepSeek,
     Qwen,
     Custom,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum AIProvider {
     Local,
-    Cloud(CloudModelProvider),
+    #[serde(rename = "openai")]
+    OpenAI,
+    Anthropic,
+    #[serde(rename = "deepseek")]
+    DeepSeek,
+    Qwen,
+    Custom,
+}
+
+impl AIProvider {
+    pub fn as_cloud_model_provider(&self) -> Option<CloudModelProvider> {
+        match self {
+            AIProvider::Local => None,
+            AIProvider::OpenAI => Some(CloudModelProvider::OpenAI),
+            AIProvider::Anthropic => Some(CloudModelProvider::Anthropic),
+            AIProvider::DeepSeek => Some(CloudModelProvider::DeepSeek),
+            AIProvider::Qwen => Some(CloudModelProvider::Qwen),
+            AIProvider::Custom => Some(CloudModelProvider::Custom),
+        }
+    }
+
+    pub fn is_cloud(&self) -> bool {
+        !matches!(self, AIProvider::Local)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AIConfig {
     pub provider: AIProvider,
     pub api_key: String,
@@ -39,6 +67,7 @@ impl Default for AIConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserPreferences {
     pub auto_scan_on_start: bool,
     pub scan_mode: String,
@@ -62,6 +91,7 @@ impl Default for UserPreferences {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WhitelistEntry {
     pub id: String,
     pub path: String,
@@ -71,6 +101,7 @@ pub struct WhitelistEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WhitelistConfig {
     pub paths: Vec<WhitelistEntry>,
     pub global_enabled: bool,
@@ -86,6 +117,7 @@ impl Default for WhitelistConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub ai: AIConfig,
     pub preferences: UserPreferences,

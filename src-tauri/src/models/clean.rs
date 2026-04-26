@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::scan::RiskLevel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CleanPriority {
     Low,
     Normal,
@@ -11,6 +12,7 @@ pub enum CleanPriority {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CleanAction {
     Delete,
     Move,
@@ -19,6 +21,7 @@ pub enum CleanAction {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanTask {
     pub id: String,
     pub target_id: String,
@@ -33,6 +36,7 @@ pub struct CleanTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanError {
     pub file_path: String,
     pub error_code: String,
@@ -40,6 +44,7 @@ pub struct CleanError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanResult {
     pub task_id: String,
     pub success: bool,
@@ -52,6 +57,7 @@ pub struct CleanResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SafetyCategory {
     pub name: String,
     pub score: f64,
@@ -60,6 +66,7 @@ pub struct SafetyCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SafetyScore {
     pub overall: f64,
     pub categories: Vec<SafetyCategory>,
@@ -68,6 +75,7 @@ pub struct SafetyScore {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CleanPhase {
     Preparing,
     BackingUp,
@@ -79,6 +87,7 @@ pub enum CleanPhase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanProgress {
     pub task_id: String,
     pub current_file: String,
@@ -90,6 +99,7 @@ pub struct CleanProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestorePoint {
     pub id: String,
     pub created_at: String,

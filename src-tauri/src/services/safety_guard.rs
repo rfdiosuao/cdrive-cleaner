@@ -9,6 +9,7 @@ pub struct SafetyGuard {
     protected_dirs: Arc<Vec<PathBuf>>,
     protected_extensions: Arc<Vec<String>>,
     privacy_dirs: Arc<Vec<PathBuf>>,
+    safe_cleanup_dirs: Arc<Vec<PathBuf>>,
     signature_verifier: Arc<crate::services::signature_verifier::SignatureVerifier>,
 }
 
@@ -53,15 +54,25 @@ impl SafetyGuard {
                 PathBuf::from(format!(r"{}\Downloads", user_profile)),
                 PathBuf::from(format!(r"{}\OneDrive", user_profile)),
             ]),
+            safe_cleanup_dirs: Arc::new(vec![
+                PathBuf::from(r"C:\Windows\Temp"),
+                PathBuf::from(r"C:\Windows\Prefetch"),
+                PathBuf::from(r"C:\Windows\SoftwareDistribution\Download"),
+                PathBuf::from(r"C:\$Recycle.Bin"),
+            ]),
             signature_verifier: Arc::new(crate::services::signature_verifier::SignatureVerifier::new()),
         }
     }
 
     pub fn check_path_safety(&self, file_path: &str) -> PathSafetyResult {
         let path = PathBuf::from(file_path);
+        let is_known_cleanup_path = self
+            .safe_cleanup_dirs
+            .iter()
+            .any(|safe_dir| Self::path_is_same_or_child(&path, safe_dir));
 
         for protected in self.protected_dirs.iter() {
-            if path.starts_with(protected) {
+            if !is_known_cleanup_path && Self::path_is_same_or_child(&path, protected) {
                 return PathSafetyResult {
                     is_safe: false,
                     risk_level: RiskLevel::Critical,
@@ -83,7 +94,7 @@ impl SafetyGuard {
         }
 
         for privacy in self.privacy_dirs.iter() {
-            if path.starts_with(privacy) {
+            if Self::path_is_same_or_child(&path, privacy) {
                 return PathSafetyResult {
                     is_safe: false,
                     risk_level: RiskLevel::Medium,
@@ -168,6 +179,20 @@ impl SafetyGuard {
 
     pub fn get_protected_extensions(&self) -> &[String] {
         &self.protected_extensions
+    }
+
+    fn path_is_same_or_child(path: &Path, base: &Path) -> bool {
+        let path = Self::normalize_path(path);
+        let base = Self::normalize_path(base);
+
+        path == base || path.starts_with(&format!("{}\\", base))
+    }
+
+    fn normalize_path(path: &Path) -> String {
+        path.to_string_lossy()
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_lowercase()
     }
 }
 

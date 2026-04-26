@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::error::AppError;
 use crate::models::clean::{CleanPriority, CleanTask, SafetyScore, SafetyCategory};
-use crate::models::config::{AIConfig, AIProvider};
+use crate::models::config::AIConfig;
 use crate::models::scan::{RiskLevel, ScanCategory, ScanResult, FileMetadata};
 
 pub struct EvaluationEngine {
@@ -230,13 +230,10 @@ impl EvaluationEngine {
 
     async fn apply_ai_adjustment(&self, base_score: f64, result: &ScanResult) -> f64 {
         let config = self.ai_config.read().await;
-        match &config.provider {
-            AIProvider::Local => base_score,
-            AIProvider::Cloud(_) => {
-                let _ = result;
-                base_score
-            }
+        if config.provider.is_cloud() {
+            let _ = result;
         }
+        base_score
     }
 
     pub async fn calculate_priority(&self, result: &ScanResult) -> f64 {

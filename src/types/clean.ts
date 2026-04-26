@@ -23,7 +23,7 @@ export interface CleanResult {
   cleanedFiles: number;
   failedFiles: number;
   backupPath: string;
-  elapsedTime: number;
+  elapsedTimeMs: number;
   errors: CleanError[];
 }
 

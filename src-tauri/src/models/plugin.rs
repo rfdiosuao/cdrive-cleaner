@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::scan::RiskLevel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PluginStatus {
     Active,
     Inactive,
@@ -11,6 +12,7 @@ pub enum PluginStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PluginCategory {
     Browser,
     System,
@@ -21,6 +23,7 @@ pub enum PluginCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
@@ -38,6 +41,7 @@ pub struct PluginInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
     pub id: String,
     pub name: String,
@@ -51,6 +55,7 @@ pub struct PluginManifest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginScanTarget {
     pub path: String,
     pub name: String,
@@ -60,6 +65,7 @@ pub struct PluginScanTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginScanResult {
     pub plugin_id: String,
     pub targets: Vec<PluginScanTarget>,
@@ -68,6 +74,7 @@ pub struct PluginScanResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginCleanResult {
     pub plugin_id: String,
     pub success: bool,

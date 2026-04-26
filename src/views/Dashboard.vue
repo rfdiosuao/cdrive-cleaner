@@ -29,9 +29,11 @@ async function loadSystemInfo() {
     const info = await systemInfo();
     const cDrive = info.drives.find((d: any) => d.letter === "C:" || d.letter === "C:\\");
     if (cDrive) {
-      totalSpace.value = formatBytes(cDrive.total_space);
-      freeSpace.value = formatBytes(cDrive.available_space);
-      usedPercent.value = Math.round((cDrive.used_space / cDrive.total_space) * 100);
+      totalSpace.value = formatBytes(cDrive.totalSize);
+      freeSpace.value = formatBytes(cDrive.availableSpace);
+      usedPercent.value = cDrive.totalSize > 0
+        ? Math.round((cDrive.usedSpace / cDrive.totalSize) * 100)
+        : 0;
     }
   } catch (e) {
     console.error("获取系统信息失败", e);

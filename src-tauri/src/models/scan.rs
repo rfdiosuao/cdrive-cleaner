@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScanMode {
     Quick,
     Deep,
@@ -8,6 +9,7 @@ pub enum ScanMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScanCategory {
     Temp,
     Cache,
@@ -21,6 +23,7 @@ pub enum ScanCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanTarget {
     pub id: String,
     pub path: String,
@@ -32,6 +35,7 @@ pub struct ScanTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RiskLevel {
     Safe,
     Low,
@@ -41,6 +45,7 @@ pub enum RiskLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
     pub path: String,
     pub name: String,
@@ -54,6 +59,7 @@ pub struct FileMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScanPhase {
     Initializing,
     Scanning,
@@ -65,6 +71,7 @@ pub enum ScanPhase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub phase: ScanPhase,
     pub current_path: String,
@@ -77,6 +84,7 @@ pub struct ScanProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub id: String,
     pub target: ScanTarget,

@@ -27,21 +27,18 @@ impl AIService {
 
     pub async fn test_connection(&self) -> Result<bool, AppError> {
         let config = self.config.read().await;
-        match &config.provider {
-            AIProvider::Local => {
-                Ok(true)
-            }
-            AIProvider::Cloud(_) => {
-                if config.api_key.is_empty() {
-                    return Err(AppError::AIError("API密钥不能为空".to_string()));
-                }
-                if config.base_url.is_empty() && config.model.is_empty() {
-                    return Err(AppError::AIError("请配置API地址和模型".to_string()));
-                }
-
-                self.test_cloud_connection(&config).await
-            }
+        if !config.provider.is_cloud() {
+            return Ok(true);
         }
+
+        if config.api_key.is_empty() {
+            return Err(AppError::AIError("API密钥不能为空".to_string()));
+        }
+        if config.base_url.is_empty() && config.model.is_empty() {
+            return Err(AppError::AIError("请配置API地址和模型".to_string()));
+        }
+
+        self.test_cloud_connection(&config).await
     }
 
     async fn test_cloud_connection(&self, config: &AIConfig) -> Result<bool, AppError> {
@@ -69,13 +66,9 @@ impl AIService {
 
     pub async fn analyze_files(&self, file_paths: &[String]) -> Result<Vec<ScanResult>, AppError> {
         let config = self.config.read().await;
-        match &config.provider {
-            AIProvider::Local => {
-                Ok(vec![])
-            }
-            AIProvider::Cloud(provider) => {
-                self.cloud_analyze(provider, &config, file_paths).await
-            }
+        match config.provider.as_cloud_model_provider() {
+            Some(provider) => self.cloud_analyze(&provider, &config, file_paths).await,
+            None => Ok(vec![]),
         }
     }
 
@@ -194,20 +187,17 @@ impl AIService {
 
     pub async fn suggest_migration(&self, software_name: &str) -> Result<Vec<String>, AppError> {
         let config = self.config.read().await;
-        match &config.provider {
-            AIProvider::Local => {
-                Ok(vec![])
-            }
-            AIProvider::Cloud(_) => {
-                let prompt = format!(
-                    "分析软件\"{}\"是否可以安全迁移到其他盘，以及迁移时需要注意的依赖项和注册表项。返回JSON格式的分析结果。",
-                    software_name
-                );
-
-                let _ = prompt;
-                Ok(vec![])
-            }
+        if !config.provider.is_cloud() {
+            return Ok(vec![]);
         }
+
+        let prompt = format!(
+            "分析软件\"{}\"是否可以安全迁移到其他盘，以及迁移时需要注意的依赖项和注册表项。返回JSON格式的分析结果。",
+            software_name
+        );
+
+        let _ = prompt;
+        Ok(vec![])
     }
 
     pub async fn smart_switch(&self, file_count: usize, avg_path_length: usize) -> AIProvider {
@@ -217,9 +207,6 @@ impl AIService {
             return AIProvider::Local;
         }
 
-        match &config.provider {
-            AIProvider::Local => AIProvider::Local,
-            AIProvider::Cloud(p) => AIProvider::Cloud(p.clone()),
-        }
+        config.provider.clone()
     }
 }

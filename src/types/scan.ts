@@ -41,8 +41,8 @@ export interface ScanProgress {
   scannedFiles: number;
   totalFiles: number;
   scannedSize: number;
-  elapsedTime: number;
-  estimatedTimeRemaining: number;
+  elapsedTimeMs: number;
+  estimatedTimeRemainingMs: number;
   percent: number;
 }
 

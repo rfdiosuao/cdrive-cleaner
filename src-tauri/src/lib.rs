@@ -52,11 +52,18 @@ pub fn run() {
             );
             let scan_result_store = Arc::new(ScanResultStore::new(database.clone()));
             let config_store = Arc::new(ConfigStore::new(database.clone()));
+            let app_config = match tauri::async_runtime::block_on(config_store.load_config()) {
+                Ok(config) => config,
+                Err(e) => {
+                    tracing::warn!("加载配置失败，使用默认配置: {}", e);
+                    models::config::AppConfig::default()
+                }
+            };
             let audit_logger = Arc::new(AuditLogger::new(database.clone()));
             let scan_engine = Arc::new(scan_engine::ScanEngine::new());
             let evaluation_engine = Arc::new(evaluation_engine::EvaluationEngine::new());
             let clean_engine = Arc::new(clean_engine::CleanEngine::new());
-            let ai_service = Arc::new(ai_service::AIService::new(models::config::AIConfig::default()));
+            let ai_service = Arc::new(ai_service::AIService::new(app_config.ai.clone()));
             let plugin_manager = Arc::new(plugin_manager::PluginManager::new());
 
             let state = AppState {

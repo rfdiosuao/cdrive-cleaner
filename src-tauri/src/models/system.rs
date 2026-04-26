@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     pub os_name: String,
     pub os_version: String,
@@ -14,6 +15,7 @@ pub struct SystemInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DriveInfo {
     pub letter: String,
     pub label: String,
@@ -25,6 +27,7 @@ pub struct DriveInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiskInfo {
     pub drive: DriveInfo,
     pub usage_percent: f64,

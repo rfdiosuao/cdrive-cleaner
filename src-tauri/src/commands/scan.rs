@@ -9,6 +9,10 @@ pub async fn scan_start(
     mode: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
+    if state.scan_engine.is_scanning().await {
+        return Err(AppError::ScanError("扫描正在进行中".to_string()));
+    }
+
     let scan_mode = match mode.as_str() {
         "quick" => ScanMode::Quick,
         "deep" => ScanMode::Deep,

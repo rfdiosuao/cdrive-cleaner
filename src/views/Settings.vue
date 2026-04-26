@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { Settings, Brain, Shield, Palette, Save, CheckCircle2, AlertCircle } from "lucide-vue-next";
 import { aiConfigGet, aiConfigSet, aiTestConnection, settingsGet, settingsSet } from "../api/settings";
+import type { AIConfig, CloudModelProvider, UserPreferences } from "../types/settings";
 
 const activeTab = ref("ai");
 
@@ -12,7 +13,7 @@ const tabs = [
   { id: "appearance", label: "外观", icon: Palette },
 ];
 
-const aiConfig = ref({
+const aiConfig = ref<AIConfig>({
   provider: "local",
   apiKey: "",
   model: "",
@@ -21,7 +22,7 @@ const aiConfig = ref({
   maxTokens: 2048,
 });
 
-const preferences = ref({
+const preferences = ref<UserPreferences>({
   autoScanOnStart: false,
   scanMode: "quick",
   cleanConfirmRequired: true,
@@ -47,7 +48,7 @@ onMounted(async () => {
     const config = await aiConfigGet();
     if (config) {
       aiConfig.value = {
-        provider: config.provider === "local" ? "local" : "cloud",
+        provider: config.provider || "local",
         apiKey: config.apiKey || "",
         model: config.model || "",
         baseUrl: config.baseUrl || "",
@@ -88,13 +89,13 @@ async function saveAiConfig() {
   isSaving.value = true;
   try {
     await aiConfigSet({
-      provider: aiConfig.value.provider === "local" ? { local: true } : { cloud: { openai: true } },
-      api_key: aiConfig.value.apiKey,
+      provider: aiConfig.value.provider,
+      apiKey: aiConfig.value.apiKey,
       model: aiConfig.value.model,
-      base_url: aiConfig.value.baseUrl,
+      baseUrl: aiConfig.value.baseUrl,
       temperature: aiConfig.value.temperature,
-      max_tokens: aiConfig.value.maxTokens,
-    } as any);
+      maxTokens: aiConfig.value.maxTokens,
+    });
   } catch {}
   isSaving.value = false;
 }
@@ -102,12 +103,13 @@ async function saveAiConfig() {
 async function savePreferences() {
   isSaving.value = true;
   try {
-    await settingsSet(preferences.value as any);
+    await settingsSet({ ...preferences.value });
   } catch {}
   isSaving.value = false;
 }
 
 function onProviderChange(providerId: string) {
+  aiConfig.value.provider = providerId as CloudModelProvider;
   const provider = cloudProviders.find((p) => p.id === providerId);
   if (provider && provider.defaultUrl) {
     aiConfig.value.baseUrl = provider.defaultUrl;
@@ -149,7 +151,7 @@ function onProviderChange(providerId: string) {
                 <button
                   class="px-4 py-2 rounded-lg text-sm transition-colors"
                   :class="aiConfig.provider !== 'local' ? 'bg-accent-blue text-white' : 'bg-dark-700 text-dark-400'"
-                  @click="aiConfig.provider = 'cloud'"
+                  @click="aiConfig.provider = 'openai'; onProviderChange('openai')"
                 >云端模式</button>
               </div>
             </div>
