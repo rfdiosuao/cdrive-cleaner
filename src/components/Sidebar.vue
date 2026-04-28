@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
 import {
-  LayoutDashboard,
-  ScanSearch,
-  Trash2,
-  HardDrive,
-  Package,
   Brain,
+  HardDrive,
+  LayoutDashboard,
+  Package,
+  ScanSearch,
   Settings,
+  Trash2,
 } from "lucide-vue-next";
 
 const route = useRoute();
@@ -24,7 +24,7 @@ const navItems = [
 </script>
 
 <template>
-  <aside class="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col">
+  <aside class="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col transition-colors duration-200">
     <nav class="flex-1 py-4 px-3 space-y-1">
       <router-link
         v-for="item in navItems"
@@ -42,7 +42,7 @@ const navItems = [
       </router-link>
     </nav>
     <div class="p-3 border-t border-dark-700">
-      <div class="text-xs text-dark-500 text-center">v0.1.0</div>
+      <div class="text-xs text-dark-500 text-center">v0.2.0</div>
     </div>
   </aside>
 </template>

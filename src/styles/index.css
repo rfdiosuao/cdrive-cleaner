@@ -30,6 +30,21 @@
   --transition-normal: 250ms ease;
 }
 
+:root[data-theme="light"] {
+  --color-bg-primary: #f5f7fb;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #e7edf6;
+  --color-bg-card: #ffffff;
+  --color-bg-hover: #e7edf6;
+  --color-text-primary: #101828;
+  --color-text-secondary: #475467;
+  --color-text-muted: #667085;
+  --color-border: #d0d5dd;
+  --color-border-hover: #98a2b3;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-elevated: 0 18px 36px rgba(16, 24, 40, 0.14);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -42,6 +57,45 @@ body {
   color: var(--color-text-primary);
   overflow: hidden;
   user-select: none;
+}
+
+:root[data-theme="light"] .bg-dark-950,
+:root[data-theme="light"] .bg-dark-900 {
+  background-color: var(--color-bg-primary) !important;
+}
+
+:root[data-theme="light"] .bg-dark-800,
+:root[data-theme="light"] .bg-dark-800\/50,
+:root[data-theme="light"] .bg-dark-900\/40,
+:root[data-theme="light"] .bg-dark-900\/60 {
+  background-color: var(--color-bg-card) !important;
+}
+
+:root[data-theme="light"] .bg-dark-700,
+:root[data-theme="light"] .hover\:bg-dark-800:hover,
+:root[data-theme="light"] .hover\:bg-dark-600:hover {
+  background-color: var(--color-bg-hover) !important;
+}
+
+:root[data-theme="light"] .text-dark-100,
+:root[data-theme="light"] .text-dark-200 {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="light"] .text-dark-300,
+:root[data-theme="light"] .text-dark-400 {
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="light"] .text-dark-500,
+:root[data-theme="light"] .text-dark-600 {
+  color: var(--color-text-muted) !important;
+}
+
+:root[data-theme="light"] .border-dark-700,
+:root[data-theme="light"] .border-dark-600,
+:root[data-theme="light"] .border-dark-500 {
+  border-color: var(--color-border) !important;
 }
 
 ::-webkit-scrollbar {
@@ -69,6 +123,23 @@ body {
   box-shadow: var(--shadow-card);
   padding: 1.5rem;
   transition: border-color var(--transition-fast);
+}
+
+.status-panel {
+  @apply rounded-lg border px-5 py-4;
+  background-color: var(--color-bg-card);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.status-strip {
+  @apply h-2 overflow-hidden rounded-full;
+  background-color: var(--color-bg-hover);
+}
+
+.status-strip-fill {
+  @apply h-full rounded-full transition-all duration-300;
+  background: linear-gradient(90deg, var(--color-accent-blue), var(--color-accent-green));
 }
 
 .card:hover {

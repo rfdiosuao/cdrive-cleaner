@@ -1,7 +1,7 @@
 [package]
 name = "cdrive-cleaner"
-version = "0.1.0"
-description = "C盘清理助手"
+version = "0.2.0"
+description = "C 盘清理助手"
 authors = ["cdrive-cleaner"]
 edition = "2021"
 
