@@ -42,7 +42,7 @@ impl AuditLogger {
                 encrypted,
                 risk_level.unwrap_or(""),
                 timestamp,
-                0i32,
+                1i32,
             ],
         )
         .map_err(|e| AppError::DatabaseError(format!("写入审计日志失败: {}", e)))?;
@@ -130,10 +130,16 @@ impl AuditLogger {
 
         let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&self.encryption_key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(b"cdrive-audit-nce");
+        let nonce_bytes = Self::new_nonce();
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
         match cipher.encrypt(nonce, data.as_bytes()) {
-            Ok(encrypted) => base64_encode(&encrypted),
+            Ok(encrypted) => {
+                let mut payload = Vec::with_capacity(nonce_bytes.len() + encrypted.len());
+                payload.extend_from_slice(&nonce_bytes);
+                payload.extend_from_slice(&encrypted);
+                base64_encode(&payload)
+            }
             Err(_) => data.to_string(),
         }
     }
@@ -143,15 +149,26 @@ impl AuditLogger {
 
         let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&self.encryption_key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(b"cdrive-audit-nce");
 
         match base64_decode(data) {
-            Some(encrypted) => match cipher.decrypt(nonce, encrypted.as_slice()) {
-                Ok(decrypted) => String::from_utf8_lossy(&decrypted).to_string(),
-                Err(_) => data.to_string(),
-            },
+            Some(payload) if payload.len() > 12 => {
+                let (nonce_bytes, encrypted) = payload.split_at(12);
+                let nonce = Nonce::from_slice(nonce_bytes);
+                match cipher.decrypt(nonce, encrypted) {
+                    Ok(decrypted) => String::from_utf8_lossy(&decrypted).to_string(),
+                    Err(_) => data.to_string(),
+                }
+            }
             None => data.to_string(),
+            _ => data.to_string(),
         }
+    }
+
+    fn new_nonce() -> [u8; 12] {
+        let id = uuid::Uuid::new_v4();
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&id.as_bytes()[..12]);
+        nonce
     }
 
     fn derive_key(seed: &str) -> [u8; 32] {
@@ -215,7 +232,8 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
     Some(result)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditLogEntry {
     pub id: String,
     pub action: String,

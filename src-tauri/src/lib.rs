@@ -143,6 +143,7 @@ pub fn run() {
             plugin::plugin_disable,
             system::system_info,
             system::whitelist_manage,
+            audit::audit_log_list,
         ])
         .run(tauri::generate_context!())
         .expect("启动失败");
