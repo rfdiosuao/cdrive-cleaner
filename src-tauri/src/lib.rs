@@ -128,6 +128,8 @@ pub fn run() {
             clean::clean_preview,
             clean::clean_execute,
             clean::clean_restore,
+            clean::clean_progress,
+            clean::clean_stop,
             migrate::migrate_analyze,
             migrate::migrate_execute,
             migrate::migrate_progress,

@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::error::AppError;
 use crate::AppState;
-use crate::models::clean::{CleanResult, CleanTask, SafetyScore};
+use crate::models::clean::{CleanProgress, CleanResult, CleanTask, SafetyScore};
 
 #[tauri::command]
 pub async fn clean_preview(
@@ -44,4 +44,18 @@ pub async fn clean_restore(
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
     state.clean_engine.restore(&restore_id).await
+}
+
+#[tauri::command]
+pub async fn clean_progress(
+    state: State<'_, AppState>,
+) -> Result<Option<CleanProgress>, AppError> {
+    Ok(state.clean_engine.get_progress().await)
+}
+
+#[tauri::command]
+pub async fn clean_stop(
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    state.clean_engine.cancel().await
 }

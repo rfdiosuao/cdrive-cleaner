@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { CheckCircle2, Circle, RotateCcw, ScanSearch, Square, Trash2 } from "lucide-vue-next";
-import { cleanExecute, cleanPreview } from "../api/clean";
+import { cleanExecute, cleanPreview, cleanProgress, cleanStop } from "../api/clean";
 import { scanProgress, scanResult, scanStart, scanStop } from "../api/scan";
 import { useScanStore } from "../stores/scan";
-import type { CleanPriority, CleanTask } from "../types/clean";
+import type { CleanPhase, CleanPriority, CleanProgress, CleanTask } from "../types/clean";
 import type { FileMetadata, ScanProgress, ScanResult } from "../types/scan";
 
 const scanStore = useScanStore();
@@ -13,10 +13,13 @@ const isScanning = ref(false);
 const isCleaning = ref(false);
 const cleanStatus = ref<string | null>(null);
 const scanStatus = ref("尚未扫描");
-const finishedAt = ref("");
+const cleanFinishedAt = ref("");
+const scanFinishedAt = ref("");
 const filterCategory = ref<string>("all");
+const currentCleanProgress = ref<CleanProgress | null>(null);
 
-const terminalPhases = ["completed", "cancelled", "error"];
+const terminalScanPhases = ["completed", "cancelled", "error"];
+const terminalCleanPhases: CleanPhase[] = ["completed", "failed", "cancelled"];
 
 const categoryNames: Record<string, string> = {
   all: "全部",
@@ -39,7 +42,7 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
-function phaseLabel(phase?: ScanProgress["phase"]) {
+function scanPhaseLabel(phase?: ScanProgress["phase"]) {
   const labels: Record<string, string> = {
     initializing: "正在初始化",
     scanning: "正在扫描文件",
@@ -51,6 +54,20 @@ function phaseLabel(phase?: ScanProgress["phase"]) {
   };
 
   return phase ? labels[phase] ?? "扫描中" : "尚未扫描";
+}
+
+function cleanPhaseLabel(phase?: CleanPhase) {
+  const labels: Record<CleanPhase, string> = {
+    preparing: "正在准备清理",
+    backing_up: "正在备份",
+    cleaning: "正在清理文件",
+    verifying: "正在验证结果",
+    completed: "清理完成",
+    failed: "清理失败",
+    cancelled: "清理已取消",
+  };
+
+  return phase ? labels[phase] : "等待清理";
 }
 
 const filteredResults = computed(() => {
@@ -68,15 +85,21 @@ const totalResultSize = computed(() => {
   return scanStore.results.reduce((sum, result) => sum + result.totalSize, 0);
 });
 
-const progressPercent = computed(() => {
+const scanProgressPercent = computed(() => {
   const percent = scanStore.progress?.percent ?? 0;
   if (isScanning.value && percent <= 0) return 2;
   return Math.min(100, Math.max(0, percent));
 });
 
-const progressText = computed(() => {
+const cleanProgressPercent = computed(() => {
+  const percent = currentCleanProgress.value?.percent ?? 0;
+  if (isCleaning.value && percent <= 0) return 2;
+  return Math.min(100, Math.max(0, percent));
+});
+
+const scanProgressText = computed(() => {
   const progress = scanStore.progress;
-  if (!progress) return "点击深度扫描后开始统计进度。";
+  if (!progress) return "点击扫描后开始统计进度。";
   if (progress.phase === "completed") {
     return `完成：发现 ${scanStore.results.length} 类项目，可释放 ${formatBytes(totalResultSize.value)}。`;
   }
@@ -86,7 +109,21 @@ const progressText = computed(() => {
   return `已扫描 ${progress.scannedFiles.toLocaleString()} 个文件，累计 ${formatBytes(progress.scannedSize || 0)}。`;
 });
 
+const cleanProgressText = computed(() => {
+  const progress = currentCleanProgress.value;
+  if (!progress) return "选择清理项后，这里会显示备份、清理和验证进度。";
+  if (progress.phase === "completed") {
+    return `清理完成：释放 ${formatBytes(progress.freedSpace)}，处理 ${progress.completedFiles}/${progress.totalFiles} 个任务。`;
+  }
+  if (progress.phase === "cancelled") return "清理已取消，部分任务可能已经完成。";
+  if (progress.phase === "failed") return "清理失败，请查看下方提示。";
+
+  return `${cleanPhaseLabel(progress.phase)}：${progress.completedFiles}/${progress.totalFiles} 个任务，已释放 ${formatBytes(progress.freedSpace)}。`;
+});
+
 function toggleSelect(id: string) {
+  if (isCleaning.value) return;
+
   if (selectedIds.value.has(id)) {
     selectedIds.value.delete(id);
   } else {
@@ -109,7 +146,7 @@ function selectAllVisible() {
 async function startScan(mode: "quick" | "deep" = "deep") {
   isScanning.value = true;
   cleanStatus.value = null;
-  finishedAt.value = "";
+  scanFinishedAt.value = "";
   scanStatus.value = "正在启动扫描";
   selectedIds.value.clear();
   scanStore.setScanning(true);
@@ -122,14 +159,14 @@ async function startScan(mode: "quick" | "deep" = "deep") {
       try {
         const progress = await scanProgress();
         scanStore.setProgress(progress);
-        scanStatus.value = phaseLabel(progress.phase);
+        scanStatus.value = scanPhaseLabel(progress.phase);
 
         const results = await scanResult();
         if (results.length > 0) {
           scanStore.setResults(results);
         }
 
-        if (!terminalPhases.includes(progress.phase)) {
+        if (!terminalScanPhases.includes(progress.phase)) {
           window.setTimeout(poll, 500);
           return;
         }
@@ -138,8 +175,8 @@ async function startScan(mode: "quick" | "deep" = "deep") {
         scanStore.setResults(finalResults);
         isScanning.value = false;
         scanStore.setScanning(false);
-        scanStatus.value = phaseLabel(progress.phase);
-        finishedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        scanStatus.value = scanPhaseLabel(progress.phase);
+        scanFinishedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
       } catch {
         isScanning.value = false;
         scanStore.setScanning(false);
@@ -163,6 +200,17 @@ async function stopScan() {
     scanStatus.value = "正在取消";
   } catch {
     scanStatus.value = "取消失败";
+  }
+}
+
+async function stopClean() {
+  if (!isCleaning.value) return;
+
+  try {
+    await cleanStop();
+    cleanStatus.value = "正在取消清理";
+  } catch {
+    cleanStatus.value = "取消清理失败";
   }
 }
 
@@ -197,6 +245,27 @@ function buildCleanTasks(result: ScanResult): CleanTask[] {
   }));
 }
 
+function startCleanPolling() {
+  const poll = async () => {
+    try {
+      const progress = await cleanProgress();
+      if (progress) {
+        currentCleanProgress.value = progress;
+      }
+
+      if (progress && !terminalCleanPhases.includes(progress.phase)) {
+        window.setTimeout(poll, 300);
+      }
+    } catch {
+      if (isCleaning.value) {
+        window.setTimeout(poll, 600);
+      }
+    }
+  };
+
+  window.setTimeout(poll, 150);
+}
+
 async function cleanSelected() {
   const selectedResults = scanStore.results.filter((result) => selectedIds.value.has(result.id));
   if (selectedResults.length === 0 || isCleaning.value) return;
@@ -205,7 +274,17 @@ async function cleanSelected() {
   if (tasks.length === 0) return;
 
   isCleaning.value = true;
-  cleanStatus.value = null;
+  cleanFinishedAt.value = "";
+  cleanStatus.value = "正在生成清理预览";
+  currentCleanProgress.value = {
+    taskId: "",
+    currentFile: "",
+    completedFiles: 0,
+    totalFiles: tasks.length,
+    freedSpace: 0,
+    percent: 0,
+    phase: "preparing",
+  };
 
   try {
     const preview = await cleanPreview(tasks);
@@ -213,11 +292,22 @@ async function cleanSelected() {
       const confirmed = window.confirm(`发现 ${preview.warnings.length} 条风险提示，是否继续清理？`);
       if (!confirmed) {
         cleanStatus.value = "已取消清理";
+        currentCleanProgress.value = {
+          ...currentCleanProgress.value,
+          phase: "cancelled",
+        };
         return;
       }
     }
 
+    cleanStatus.value = "正在清理";
+    startCleanPolling();
     const results = await cleanExecute(tasks);
+    const finalProgress = await cleanProgress();
+    if (finalProgress) {
+      currentCleanProgress.value = finalProgress;
+    }
+
     const failed = results.filter((result) => !result.success).length;
     const cleaned = results.reduce((sum, result) => sum + result.cleanedFiles, 0);
     const freed = results.reduce((sum, result) => sum + result.freedSpace, 0);
@@ -228,11 +318,15 @@ async function cleanSelected() {
       selectedIds.value.clear();
     }
 
+    cleanFinishedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     cleanStatus.value = failed === 0
       ? `已清理 ${cleaned} 个文件，释放 ${formatBytes(freed)}。`
       : `清理完成，${failed} 个任务失败，已清理 ${cleaned} 个文件。`;
   } catch (error: any) {
     cleanStatus.value = error?.message || "清理失败";
+    currentCleanProgress.value = currentCleanProgress.value
+      ? { ...currentCleanProgress.value, phase: "failed" }
+      : null;
   } finally {
     isCleaning.value = false;
   }
@@ -244,18 +338,18 @@ async function cleanSelected() {
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-dark-100">扫描结果</h1>
-        <p class="mt-1 text-sm text-dark-500">扫描完成后会保留结果，并显示明确的完成时间。</p>
+        <p class="mt-1 text-sm text-dark-500">扫描和清理都会显示明确的阶段、进度和完成时间。</p>
       </div>
       <div class="flex items-center gap-3">
-        <button class="btn-secondary flex items-center gap-2" @click="selectAllVisible" :disabled="filteredResults.length === 0">
+        <button class="btn-secondary flex items-center gap-2" @click="selectAllVisible" :disabled="filteredResults.length === 0 || isCleaning">
           <CheckCircle2 :size="16" />
           选择当前列表
         </button>
-        <button class="btn-secondary flex items-center gap-2" @click="startScan('quick')" :disabled="isScanning">
+        <button class="btn-secondary flex items-center gap-2" @click="startScan('quick')" :disabled="isScanning || isCleaning">
           <RotateCcw :size="16" :class="{ 'animate-spin': isScanning }" />
           快速扫描
         </button>
-        <button class="btn-primary flex items-center gap-2" @click="startScan('deep')" :disabled="isScanning">
+        <button class="btn-primary flex items-center gap-2" @click="startScan('deep')" :disabled="isScanning || isCleaning">
           <ScanSearch :size="16" :class="{ 'animate-spin': isScanning }" />
           {{ isScanning ? "扫描中" : "深度扫描" }}
         </button>
@@ -270,30 +364,50 @@ async function cleanSelected() {
       <div class="flex items-start justify-between gap-4">
         <div>
           <div class="flex items-center gap-2">
-            <CheckCircle2
-              v-if="scanStore.progress?.phase === 'completed'"
-              :size="18"
-              class="text-accent-green"
-            />
-            <ScanSearch
-              v-else
-              :size="18"
-              :class="isScanning ? 'animate-pulse text-accent-blue' : 'text-dark-500'"
-            />
+            <CheckCircle2 v-if="scanStore.progress?.phase === 'completed'" :size="18" class="text-accent-green" />
+            <ScanSearch v-else :size="18" :class="isScanning ? 'animate-pulse text-accent-blue' : 'text-dark-500'" />
             <span class="font-semibold">{{ scanStatus }}</span>
           </div>
-          <p class="mt-2 text-sm text-dark-500">{{ progressText }}</p>
+          <p class="mt-2 text-sm text-dark-500">{{ scanProgressText }}</p>
           <p v-if="scanStore.progress?.currentPath && isScanning" class="mt-1 max-w-3xl truncate text-xs text-dark-500">
             当前路径：{{ scanStore.progress.currentPath }}
           </p>
         </div>
         <div class="text-right text-sm text-dark-500">
-          <div class="text-lg font-bold text-dark-100">{{ progressPercent.toFixed(0) }}%</div>
-          <div v-if="finishedAt">完成于 {{ finishedAt }}</div>
+          <div class="text-lg font-bold text-dark-100">{{ scanProgressPercent.toFixed(0) }}%</div>
+          <div v-if="scanFinishedAt">完成于 {{ scanFinishedAt }}</div>
         </div>
       </div>
       <div class="status-strip mt-4">
-        <div class="status-strip-fill" :style="{ width: `${progressPercent}%` }"></div>
+        <div class="status-strip-fill" :style="{ width: `${scanProgressPercent}%` }"></div>
+      </div>
+    </div>
+
+    <div v-if="currentCleanProgress || isCleaning || cleanStatus" class="status-panel">
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <CheckCircle2 v-if="currentCleanProgress?.phase === 'completed'" :size="18" class="text-accent-green" />
+            <Trash2 v-else :size="18" :class="isCleaning ? 'animate-pulse text-accent-red' : 'text-dark-500'" />
+            <span class="font-semibold">{{ cleanPhaseLabel(currentCleanProgress?.phase) }}</span>
+          </div>
+          <p class="mt-2 text-sm text-dark-500">{{ cleanProgressText }}</p>
+          <p v-if="currentCleanProgress?.currentFile && isCleaning" class="mt-1 max-w-3xl truncate text-xs text-dark-500">
+            当前文件：{{ currentCleanProgress.currentFile }}
+          </p>
+          <p v-if="cleanStatus" class="mt-2 text-sm text-dark-300">{{ cleanStatus }}</p>
+        </div>
+        <div class="shrink-0 text-right text-sm text-dark-500">
+          <div class="text-lg font-bold text-dark-100">{{ cleanProgressPercent.toFixed(0) }}%</div>
+          <div v-if="cleanFinishedAt">完成于 {{ cleanFinishedAt }}</div>
+          <button v-if="isCleaning" class="btn-danger mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-sm" @click="stopClean">
+            <Square :size="14" />
+            停止清理
+          </button>
+        </div>
+      </div>
+      <div class="status-strip mt-4">
+        <div class="status-strip-fill" :style="{ width: `${cleanProgressPercent}%` }"></div>
       </div>
     </div>
 
@@ -312,15 +426,12 @@ async function cleanSelected() {
       </div>
     </div>
 
-    <div v-if="cleanStatus" class="status-panel text-sm text-dark-300">
-      {{ cleanStatus }}
-    </div>
-
     <div v-if="scanStore.results.length > 0" class="space-y-2">
       <div
         v-for="result in filteredResults"
         :key="result.id"
         class="card flex items-center gap-4 cursor-pointer hover:border-accent-blue/30 transition-colors"
+        :class="{ 'opacity-60': isCleaning }"
         @click="toggleSelect(result.id)"
       >
         <component
@@ -355,7 +466,7 @@ async function cleanSelected() {
       <div class="empty-panel text-dark-500">
         <ScanSearch :size="48" class="mx-auto mb-4 text-dark-600" />
         <p>尚未进行扫描</p>
-        <p class="text-sm mt-2">点击上方按钮开始扫描 C 盘，完成后会显示完成状态和结果列表。</p>
+        <p class="text-sm mt-2">点击上方按钮开始扫描 C 盘，完成后会显示结果列表。</p>
       </div>
     </div>
 
