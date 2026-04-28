@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { CheckCircle2, Circle, RotateCcw, ScanSearch, Square, Trash2 } from "lucide-vue-next";
 import { cleanExecute, cleanPreview, cleanProgress, cleanStop } from "../api/clean";
 import { scanProgress, scanResult, scanStart, scanStop } from "../api/scan";
@@ -17,6 +17,7 @@ const cleanFinishedAt = ref("");
 const scanFinishedAt = ref("");
 const filterCategory = ref<string>("all");
 const currentCleanProgress = ref<CleanProgress | null>(null);
+let previewProgressTimer: number | null = null;
 
 const terminalScanPhases = ["completed", "cancelled", "error"];
 const terminalCleanPhases: CleanPhase[] = ["completed", "failed", "cancelled"];
@@ -58,7 +59,7 @@ function scanPhaseLabel(phase?: ScanProgress["phase"]) {
 
 function cleanPhaseLabel(phase?: CleanPhase) {
   const labels: Record<CleanPhase, string> = {
-    preparing: "正在准备清理",
+    preparing: "正在生成清理预览",
     backing_up: "正在备份",
     cleaning: "正在清理文件",
     verifying: "正在验证结果",
@@ -112,6 +113,9 @@ const scanProgressText = computed(() => {
 const cleanProgressText = computed(() => {
   const progress = currentCleanProgress.value;
   if (!progress) return "选择清理项后，这里会显示备份、清理和验证进度。";
+  if (progress.phase === "preparing") {
+    return `正在检查 ${progress.totalFiles.toLocaleString()} 个清理任务，预览完成后会进入确认或清理阶段。`;
+  }
   if (progress.phase === "completed") {
     return `清理完成：释放 ${formatBytes(progress.freedSpace)}，处理 ${progress.completedFiles}/${progress.totalFiles} 个任务。`;
   }
@@ -253,8 +257,9 @@ function startCleanPolling() {
         currentCleanProgress.value = progress;
       }
 
-      if (progress && !terminalCleanPhases.includes(progress.phase)) {
-        window.setTimeout(poll, 300);
+      if (isCleaning.value) {
+        const delay = progress && terminalCleanPhases.includes(progress.phase) ? 600 : 300;
+        window.setTimeout(poll, delay);
       }
     } catch {
       if (isCleaning.value) {
@@ -265,6 +270,50 @@ function startCleanPolling() {
 
   window.setTimeout(poll, 150);
 }
+
+function startPreviewProgress(totalTasks: number) {
+  stopPreviewProgress();
+
+  const messages = [
+    "正在检查清理路径",
+    "正在评估文件风险",
+    "正在计算可释放空间",
+    "正在生成安全预览",
+  ];
+  let tick = 0;
+  let percent = Math.max(currentCleanProgress.value?.percent ?? 0, 2);
+  const ceiling = totalTasks > 1000 ? 22 : 16;
+
+  previewProgressTimer = window.setInterval(() => {
+    if (!isCleaning.value || currentCleanProgress.value?.phase !== "preparing") {
+      stopPreviewProgress();
+      return;
+    }
+
+    const message = messages[tick % messages.length];
+    const step = totalTasks > 1000 ? 0.7 : 1.25;
+    percent = Math.min(ceiling, percent + step);
+    tick += 1;
+
+    currentCleanProgress.value = {
+      ...currentCleanProgress.value,
+      currentFile: message,
+      percent,
+    };
+    cleanStatus.value = message;
+  }, 450);
+}
+
+function stopPreviewProgress() {
+  if (previewProgressTimer !== null) {
+    window.clearInterval(previewProgressTimer);
+    previewProgressTimer = null;
+  }
+}
+
+onBeforeUnmount(() => {
+  stopPreviewProgress();
+});
 
 async function cleanSelected() {
   const selectedResults = scanStore.results.filter((result) => selectedIds.value.has(result.id));
@@ -285,9 +334,17 @@ async function cleanSelected() {
     percent: 0,
     phase: "preparing",
   };
+  startPreviewProgress(tasks.length);
 
   try {
     const preview = await cleanPreview(tasks);
+    stopPreviewProgress();
+    currentCleanProgress.value = {
+      ...currentCleanProgress.value,
+      currentFile: "安全预览已完成",
+      percent: Math.max(currentCleanProgress.value?.percent ?? 0, 24),
+      phase: "preparing",
+    };
     if (preview.warnings.length > 0) {
       const confirmed = window.confirm(`发现 ${preview.warnings.length} 条风险提示，是否继续清理？`);
       if (!confirmed) {
@@ -301,6 +358,12 @@ async function cleanSelected() {
     }
 
     cleanStatus.value = "正在清理";
+    currentCleanProgress.value = {
+      ...currentCleanProgress.value,
+      currentFile: "正在启动清理引擎",
+      percent: Math.max(currentCleanProgress.value?.percent ?? 0, 25),
+      phase: "preparing",
+    };
     startCleanPolling();
     const results = await cleanExecute(tasks);
     const finalProgress = await cleanProgress();
@@ -323,11 +386,13 @@ async function cleanSelected() {
       ? `已清理 ${cleaned} 个文件，释放 ${formatBytes(freed)}。`
       : `清理完成，${failed} 个任务失败，已清理 ${cleaned} 个文件。`;
   } catch (error: any) {
+    stopPreviewProgress();
     cleanStatus.value = error?.message || "清理失败";
     currentCleanProgress.value = currentCleanProgress.value
       ? { ...currentCleanProgress.value, phase: "failed" }
       : null;
   } finally {
+    stopPreviewProgress();
     isCleaning.value = false;
   }
 }
@@ -400,7 +465,7 @@ async function cleanSelected() {
         <div class="shrink-0 text-right text-sm text-dark-500">
           <div class="text-lg font-bold text-dark-100">{{ cleanProgressPercent.toFixed(0) }}%</div>
           <div v-if="cleanFinishedAt">完成于 {{ cleanFinishedAt }}</div>
-          <button v-if="isCleaning" class="btn-danger mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-sm" @click="stopClean">
+          <button v-if="isCleaning && currentCleanProgress?.phase !== 'preparing'" class="btn-danger mt-2 inline-flex items-center gap-2 px-3 py-1.5 text-sm" @click="stopClean">
             <Square :size="14" />
             停止清理
           </button>

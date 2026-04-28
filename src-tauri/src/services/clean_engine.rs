@@ -8,6 +8,8 @@ use crate::error::AppError;
 use crate::models::clean::{CleanProgress, CleanResult, CleanTask, CleanPhase, CleanError, RestorePoint};
 use crate::services::safety_guard::SafetyGuard;
 
+const MAX_PREVIEW_WARNINGS: usize = 50;
+
 pub struct CleanEngine {
     progress: Arc<RwLock<Option<CleanProgress>>>,
     is_cleaning: Arc<RwLock<bool>>,
@@ -34,15 +36,27 @@ impl CleanEngine {
         let mut total_size = 0u64;
         let mut total_files = 0u64;
         let mut warnings = Vec::new();
+        let mut hidden_warning_count = 0usize;
 
         for task in tasks {
             let safety = self.safety_guard.check_path_safety(&task.target_path);
             if !safety.is_safe {
-                warnings.push(format!("「{}」: {}", task.target_name, safety.reason));
+                if warnings.len() < MAX_PREVIEW_WARNINGS {
+                    warnings.push(format!("「{}」: {}", task.target_name, safety.reason));
+                } else {
+                    hidden_warning_count += 1;
+                }
             }
 
             total_size += task.size;
             total_files += task.file_count;
+        }
+
+        if hidden_warning_count > 0 {
+            warnings.push(format!(
+                "还有 {} 条风险提示已折叠，请谨慎确认。",
+                hidden_warning_count
+            ));
         }
 
         Ok(CleanPreview {
@@ -80,6 +94,18 @@ impl CleanEngine {
         let start = Instant::now();
         let total_tasks = tasks.len();
         let mut results = Vec::new();
+
+        let mut progress = self.progress.write().await;
+        *progress = Some(CleanProgress {
+            task_id: String::new(),
+            current_file: "正在准备清理任务".to_string(),
+            completed_files: 0,
+            total_files: total_tasks as u64,
+            freed_space: 0,
+            percent: 0.0,
+            phase: CleanPhase::Preparing,
+        });
+        drop(progress);
 
         for (idx, task) in tasks.iter().enumerate() {
             if *self.cancel_token.read().await {

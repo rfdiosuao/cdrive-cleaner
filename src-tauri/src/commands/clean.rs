@@ -3,6 +3,17 @@ use tauri::State;
 use crate::error::AppError;
 use crate::AppState;
 use crate::models::clean::{CleanProgress, CleanResult, CleanTask, SafetyScore};
+use crate::models::scan::RiskLevel;
+
+fn preview_score(task: &CleanTask) -> f64 {
+    match &task.risk_level {
+        RiskLevel::Safe => 95.0,
+        RiskLevel::Low => 82.0,
+        RiskLevel::Medium => 62.0,
+        RiskLevel::High => 38.0,
+        RiskLevel::Critical => 12.0,
+    }
+}
 
 #[tauri::command]
 pub async fn clean_preview(
@@ -15,13 +26,8 @@ pub async fn clean_preview(
 
     let preview = state.clean_engine.preview(&tasks).await?;
 
-    let mut total_score = 0.0;
-    let mut count = 0;
-    for task in &tasks {
-        let score = state.evaluation_engine.evaluate_task(task).await?;
-        total_score += score.overall;
-        count += 1;
-    }
+    let total_score: f64 = tasks.iter().map(preview_score).sum();
+    let count = tasks.len();
 
     let safety = SafetyScore {
         overall: if count > 0 { total_score / count as f64 } else { 0.0 },
