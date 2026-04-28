@@ -1,0 +1,45 @@
+[package]
+name = "cdrive-cleaner"
+version = "0.1.0"
+description = "C盘清理助手"
+authors = ["cdrive-cleaner"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-process = "2"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sysinfo = "0.30"
+windows = { version = "0.54", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_Storage_FileSystem",
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_System_Registry",
+  "Win32_System_IO",
+] }
+ort = "2.0.0-rc.12"
+clap = { version = "4", features = ["derive"] }
+md-5 = "0.10"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+aes-gcm = "0.10"
+lru = "0.12"
+num_cpus = "1"
