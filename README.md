@@ -1,3 +1,5 @@
+<p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
+
 # C盘清理助手
 
 一款基于 Tauri 2.0 的高性能 Windows C盘清理工具，Rust 后端 + Vue 3 前端。
